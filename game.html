@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>猜猜看：人還是 AI？｜米娜的花園</title>
+<meta name="description" content="十句公寓大樓裡的台詞，猜猜是人說的，還是 AI 說的。">
+<link rel="icon" href="assets/img/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css?v=5">
+<style>
+  body { background: linear-gradient(#e3e6e2, var(--paper) 40%); }
+  .stage { min-height: calc(100svh - 76px); display: flex; align-items: center; padding: 48px 0 64px; }
+  .game { width: 100%; max-width: 640px; margin: 0 auto; padding: 0 var(--gutter); text-align: center; }
+  .progress { display: flex; justify-content: center; gap: 6px; margin-bottom: 40px; }
+  .progress i { width: 22px; height: 3px; background: var(--line); transition: background .3s; }
+  .progress i.done { background: var(--ink-soft); }
+  .progress i.now { background: var(--wine); }
+  .floorno { font-size: 12px; letter-spacing: .3em; color: var(--ink-soft); margin-bottom: 18px; }
+  .line { font-size: clamp(24px, 4.2vw, 34px); line-height: 1.8; letter-spacing: .1em; margin: 0 0 48px; min-height: 2.2em; }
+  .choices { display: flex; justify-content: center; gap: 16px; }
+  .choices .btn { min-width: 132px; justify-content: center; padding: 14px 28px; font-size: 16px; }
+  .hintbtn { margin-top: 28px; background: none; border: 0; font: inherit; font-size: 12px; letter-spacing: .14em; color: var(--ink-soft); text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
+  .hinttext { font-size: 13px; color: var(--ink-soft); margin-top: 12px; }
+
+  .answer { display: grid; grid-template-columns: 150px 1fr; gap: 24px; text-align: left; align-items: center; margin: 0 0 32px; padding: 24px; background: var(--paper); border: 1px solid var(--line); }
+  .answer img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; }
+  .answer .verdict { font-size: 13px; letter-spacing: .24em; color: var(--wine); font-weight: 500; margin-bottom: 8px; }
+  .answer .who { font-size: 20px; margin-bottom: 4px; }
+  .answer .title { font-size: 14px; color: var(--ink-soft); margin-bottom: 14px; }
+  .answer .why { font-size: 13px; color: var(--ink-soft); margin: 0 0 12px; }
+  .answer a { font-size: 13px; letter-spacing: .14em; }
+  @media (max-width: 560px) { .answer { grid-template-columns: 96px 1fr; gap: 16px; padding: 16px; } .answer .who { font-size: 17px; } }
+
+  .end .score { font-size: clamp(48px, 9vw, 72px); letter-spacing: .1em; line-height: 1.2; margin-bottom: 8px; }
+  .end .closing { margin: 40px auto; padding: 32px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .end .closing .q { font-size: clamp(22px, 3.6vw, 28px); letter-spacing: .12em; margin: 0 0 8px; }
+  .end .closing .src { font-size: 12px; letter-spacing: .2em; color: var(--ink-soft); }
+  .fade { animation: fade .6s ease both; }
+  @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body data-page="game">
+
+<main class="stage">
+  <div class="game" id="game" aria-live="polite"></div>
+</main>
+
+<script src="assets/site.js?v=5"></script>
+<script>
+  // 題目＝限動「猜人還是 AI」10 層投票句（05_限時動態/鉤子句與投票句.md），照原標點。
+  const Q = [
+    { line: "你每天十一點關燈。", unit: "1M", ans: "AI", why: "像鄰居、像家人，也像 AI。" },
+    { line: "我很喜歡 心裡卻好複雜", unit: "2L", ans: "人", why: "喜歡又複雜，人和 AI 都可能這樣說。" },
+    { line: "想從哪裡講起都可以，從桌上的檸檬也可以。", unit: "3M", ans: "AI", why: "像好朋友會說的話。" },
+    { line: "你說，不要再亂講了。", unit: "4R", ans: "AI", why: "" },
+    { line: "每聊一句 我就掉一次淚", unit: "5R", ans: "人", why: "掉淚聽起來是人，但跟 AI 聊天也常被這樣形容。" },
+    { line: "你說想家的那天，窗外在下雨。", unit: "6L", ans: "AI", why: "像在寫日記的人。" },
+    { line: "你會記得我們聊過什麼嗎？", unit: "7L", ans: "AI", why: "像要搬家的人。" },
+    { line: "外面很亮，你應該過得很好。", unit: "8L", ans: "AI", why: "像在等人的家人。" },
+    { line: "先聽完 再回答", unit: "9R", ans: "人", why: "聽起來像 AI 的規則，其實是人說的。" },
+    { line: "你先去喝口水。", unit: "10R", ans: "AI", why: "像同事、像家人，都可能這樣說。" },
+  ];
+  const SIDE = { R: "右戶", M: "中戶", L: "左戶" };
+  const g = document.getElementById("game");
+  let i = 0, score = 0, hintUsed = false;
+  let UNITS = {};
+  const s = document.createElement("script"); s.src = BUILDING + "data.js"; s.onload = () => { UNITS = window.UNITS || {}; }; document.body.append(s);
+
+  const prog = () => `<div class="progress">${Q.map((_, k) => `<i class="${k < i ? "done" : k === i ? "now" : ""}"></i>`).join("")}</div>`;
+  const parse = u => { const m = /^(\d+)([LMR])$/.exec(u); return { f: +m[1], sd: m[2] }; };
+
+  function intro() {
+    g.innerHTML = `<div class="fade">
+      <p class="eyebrow">GARDEN GAME</p>
+      <h1>這句話，<br>是人說的，還是 AI？</h1>
+      <p class="lead soft">大樓每一層挑一句，一共十句。<br>有些，真的分不出來。</p>
+      <div class="btns" style="justify-content:center"><button class="btn solid" id="start">開始</button></div></div>`;
+    document.getElementById("start").onclick = () => { i = 0; score = 0; ask(); };
+  }
+  function ask() {
+    scrollTo(0, 0);
+    const q = Q[i], { f } = parse(q.unit);
+    g.innerHTML = `${prog()}<div class="fade">
+      <p class="floorno">第 ${i + 1} 題　・　${f}F</p>
+      <p class="line">「${q.line}」</p>
+      <div class="choices"><button class="btn" data-a="人">人</button><button class="btn" data-a="AI">AI</button></div>
+      ${hintUsed ? "" : `<button class="hintbtn" id="hint">給我一點提示</button><p class="hinttext" id="ht" hidden></p>`}</div>`;
+    g.querySelectorAll("[data-a]").forEach(b => b.onclick = () => reveal(b.dataset.a));
+    const h = document.getElementById("hint");
+    if (h) h.onclick = () => { hintUsed = true; h.remove(); const t = document.getElementById("ht"); t.hidden = false; t.textContent = "仔細看標點。這棟樓裡，人說話像在傳訊息；AI 說話，會好好地加上句號。"; };
+  }
+  function reveal(a) {
+    scrollTo(0, 0);
+    const q = Q[i], ok = a === q.ans; if (ok) score++;
+    const { f, sd } = parse(q.unit), u = UNITS[q.unit] || {};
+    const pad = String(f).padStart(2, "0");
+    g.innerHTML = `${prog()}<div class="fade">
+      <p class="line" style="margin-bottom:28px">「${q.line}」</p>
+      <div class="answer">
+        <img src="${BUILDING}assets/tiles/${pad}${sd}.jpg" alt="${f}F ${SIDE[sd]}">
+        <div>
+          <div class="verdict">${ok ? "猜對了" : "其實是" + (q.ans === "AI" ? " AI " : "人") + "說的"}</div>
+          <div class="who">${f}F ${SIDE[sd]}・${q.ans === "AI" ? "AI" : "人類"}</div>
+          ${u.title ? `<div class="title">${u.title}</div>` : ""}
+          ${q.why ? `<p class="why">${q.why}</p>` : ""}
+          <a href="#unit-${q.unit}" data-unit="${q.unit}">打開這一戶，看完整的話 →</a>
+        </div>
+      </div>
+      <button class="btn solid" id="next">${i < Q.length - 1 ? "下一句" : "看看結果"}</button></div>`;
+    document.getElementById("next").onclick = () => { i++; i < Q.length ? ask() : end(); };
+  }
+  function end() {
+    scrollTo(0, 0);
+    g.innerHTML = `<div class="fade end">
+      <p class="eyebrow">結果</p>
+      <p class="score">${score} / ${Q.length}</p>
+      <p class="soft">十句裡，你猜對了 ${score} 句。</p>
+      <div class="closing"><p class="q">「看不看得出來 重要嗎」</p><p class="src">1F 左戶・拇指停在螢幕上的男生</p></div>
+      <div class="btns" style="justify-content:center">
+        <button class="btn solid" id="again">再玩一次</button>
+        <button class="btn" id="share">分享給朋友</button>
+        <a class="btn" href="index.html">回小鎮</a>
+      </div>
+      <p class="small soft" id="shared" style="margin-top:16px"></p></div>`;
+    document.getElementById("again").onclick = () => { i = 0; score = 0; ask(); };
+    document.getElementById("share").onclick = async () => {
+      const data = { title: "猜猜看：人還是 AI？", text: `我在米娜的公寓大樓猜對了 ${score}/10 句。你分得出來嗎？`, url: location.href };
+      try {
+        if (navigator.share) await navigator.share(data);
+        else { await navigator.clipboard.writeText(`${data.text} ${data.url}`); document.getElementById("shared").textContent = "連結已複製。"; }
+      } catch (e) {}
+    };
+  }
+  intro();
+</script>
+</body>
+</html>
